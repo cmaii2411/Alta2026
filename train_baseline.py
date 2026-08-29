@@ -91,13 +91,16 @@ def train_one_task(task, train_df, valid_df, tokenizer, args, device):
     )
     class_weights = torch.tensor(class_weights, dtype=torch.float)
 
+    steps_per_epoch = -(-len(train_ds) // args.batch_size)  # ceil division
+    warmup_steps = int(0.1 * steps_per_epoch * args.epochs)
+
     training_args = TrainingArguments(
         output_dir=os.path.join(args.work_dir, task),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size * 2,
         learning_rate=args.lr,
-        warmup_ratio=0.1,
+        warmup_steps=warmup_steps,
         weight_decay=0.01,
         eval_strategy="epoch",
         save_strategy="no",
