@@ -11,7 +11,10 @@ Usage:
 """
 
 import argparse
+import html
 import os
+import re
+import unicodedata
 
 import numpy as np
 import pandas as pd
@@ -25,6 +28,23 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+
+
+def clean_text(text):
+    """Light, conservative text cleanup applied before tokenization.
+
+    This is deliberately NOT the classic stemming/lemmatization/stopword-removal
+    pipeline (sklearn/NLTK style) -- a pretrained subword tokenizer already
+    handles raw, messy text well, and stripping words or casing would throw
+    away signal (e.g. capitalization, punctuation) that matters for sentiment
+    and sarcasm. This only fixes encoding noise and wasted whitespace, which a
+    check of data/train.csv showed is actually present (Reddit-style line
+    breaks, smart quotes, occasional HTML entities), without touching wording.
+    """
+    text = html.unescape(text)  # e.g. "&amp;" -> "&"
+    text = unicodedata.normalize("NFKC", text)  # normalize unicode variants (smart quotes etc.)
+    text = re.sub(r"\s+", " ", text).strip()  # collapse newlines/repeated whitespace
+    return text
 
 
 class TextDataset(Dataset):
@@ -153,6 +173,8 @@ def main():
 
     train_df = pd.read_csv(os.path.join(args.data_dir, "train.csv"))
     valid_df = pd.read_csv(os.path.join(args.data_dir, "valid.csv"))
+    train_df["text"] = train_df["text"].map(clean_text)
+    valid_df["text"] = valid_df["text"].map(clean_text)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
