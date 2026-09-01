@@ -123,7 +123,11 @@ def train_one_task(task, train_df, valid_df, tokenizer, args, device):
         warmup_steps=warmup_steps,
         weight_decay=0.01,
         eval_strategy="epoch",
-        save_strategy="no",
+        save_strategy="epoch",
+        save_total_limit=1,  # only keep the checkpoint load_best_model_at_end needs
+        load_best_model_at_end=True,
+        metric_for_best_model="macro_f1",
+        greater_is_better=True,
         logging_steps=50,
         report_to=[],
     )
@@ -137,6 +141,12 @@ def train_one_task(task, train_df, valid_df, tokenizer, args, device):
         class_weights=class_weights,
     )
     trainer.train()
+
+    if trainer.state.best_metric is not None:
+        print(
+            f"  [{task}] using best-epoch checkpoint "
+            f"(macro_f1={trainer.state.best_metric:.4f}) instead of the final epoch"
+        )
 
     preds = trainer.predict(valid_ds)
     return np.argmax(preds.predictions, axis=-1)
