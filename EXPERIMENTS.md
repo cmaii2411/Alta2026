@@ -10,7 +10,8 @@ task/dialect, plus the final score `(min(sent-AU,sent-UK) + min(sarc-AU,sarc-UK)
 |---|---|---|---|---|---|---|---|---|
 | 2026-09-02 | main | 424ef58 | Baseline + text preprocessing (whitespace/unicode/HTML cleanup) | 0.9133 | 0.9584 | 0.7176 | 0.6374 | 0.7754 |
 | 2026-09-10 | main | e294faa | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
-| _pending_ | experiment/source-tag-input | _(this branch)_ | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | _run and fill in_ | | | | |
+| _pending_ | experiment/source-tag-input | 21e21fa | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | _run and fill in_ | | | | |
+| _pending_ | experiment/focal-loss | 9c5e497 | Replace weighted cross-entropy with focal loss (gamma=2) to focus on hard examples instead of uniformly upweighting the minority class | _run and fill in_ | | | | |
 
 ## experiment/best-checkpoint-selection
 
@@ -56,12 +57,35 @@ fill in its row above from the printed score table, then run
 actually narrowed, not just whether the score moved (en-UK sarcasm has only
 30 positive examples in `valid.csv`, so the score alone is noisy).
 
+## experiment/focal-loss
+
+**Why:** `error_analysis.py` on the baseline showed most sarcasm false
+positives are genuine negative reviews -- the model learned a
+"negative-sounding -> sarcastic" shortcut. Plain `compute_class_weight`
+uniformly upweights every minority-class example, which likely reinforces
+that shortcut rather than fixing it.
+
+**Change:** `WeightedTrainer.compute_loss` now uses focal loss
+(`(1 - p_t) ** gamma * cross_entropy`, `gamma=2.0`) instead of plain
+weighted cross-entropy. `class_weights` is kept as the per-class alpha term,
+but easy/already-correct examples get down-weighted so training spends more
+of its signal on the hard, ambiguous cases instead of amplifying the same
+easy majority-vs-minority split.
+
+**How to reproduce/compare:** same as above -- run, fill in the row, then
+check with `error_analysis.py` whether the negative-review false-positive
+rate specifically went down, not just the aggregate score.
+
+**Alternative to `experiment/source-tag-input`, not a combination of both** --
+these two branches are separate attempts at the same underlying problem
+(the sarcasm shortcut) via different mechanisms (giving more context vs.
+changing what the loss focuses on), so they can be compared independently
+before deciding whether to combine them.
+
 ## Follow-up ideas not yet tried (see conversation for full reasoning)
 
 - Try `roberta-base` and a social-media-pretrained model (e.g.
   `cardiffnlp/twitter-roberta-base-sentiment`) as `--model_name`.
-- Try oversampling or focal loss instead of `compute_class_weight("balanced")`
-  for the sarcasm imbalance (18.5% positive in training data).
 - Try `--max_length 256` (~5.3% of training rows are truncated at 192 tokens).
 - Multi-task model: one shared encoder with two classification heads
   (sentiment + sarcasm) instead of two fully independent models.
