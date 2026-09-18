@@ -9,7 +9,10 @@ task/dialect, plus the final score `(min(sent-AU,sent-UK) + min(sarc-AU,sarc-UK)
 | Date | Branch | Commit | Change | sent-AU | sent-UK | sarc-AU | sarc-UK | final |
 |---|---|---|---|---|---|---|---|---|
 | 2026-09-02 | main | 424ef58 | Baseline + text preprocessing (whitespace/unicode/HTML cleanup) | 0.9133 | 0.9584 | 0.7176 | 0.6374 | 0.7754 |
-| _pending_ | experiment/best-checkpoint-selection | _(this branch)_ | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
+| 2026-09-10 | main | e294faa | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
+| _pending_ | experiment/source-tag-input | 21e21fa | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text | _run and fill in_ | | | | |
+| _pending_ | experiment/focal-loss | 9c5e497 | Focal loss (gamma=2) instead of weighted cross-entropy | _run and fill in_ | | | | |
+| _pending_ | experiment/max-length-256 | _(this branch)_ | `--max_length` default 192 -> 256 (cuts training-row truncation from 5.26% to 2.42%) | _run and fill in_ | | | | |
 
 ## experiment/best-checkpoint-selection
 
@@ -35,14 +38,71 @@ this is a low-risk correctness fix, not a big lever. The bigger levers
 (model choice, class-imbalance handling, multi-task learning, etc.) are
 listed as follow-up ideas below.
 
+## experiment/source-tag-input
+
+**Why:** `error_analysis.py` run on the baseline showed the sarcasm model's
+false negatives and false positives split cleanly by `source` -- Google-review
+sarcasm reads as deadpan understatement ("The longest I had to wait in a
+drive thru. 20 minutes. Really?"), Reddit sarcasm is short and
+context-dependent ("Looks like we got a genius over here") -- yet `source`
+was never given to the model as input, only used afterward for scoring.
+
+**Change:** `tag_source()` prepends `[REDDIT]`/`[GOOGLE]` to the text handed
+to the tokenizer (model input only -- `train_df`/`valid_df["text"]` stay
+untouched so `answer.csv` and `error_analysis.py`'s row-alignment check
+against `valid.csv` still match).
+
+**How to reproduce/compare:** run `python train_baseline.py` on this branch,
+fill in its row above from the printed score table, then run
+`error_analysis.py` again to check whether the source-specific error split
+actually narrowed, not just whether the score moved (en-UK sarcasm has only
+30 positive examples in `valid.csv`, so the score alone is noisy).
+
+## experiment/focal-loss
+
+**Why:** `error_analysis.py` on the baseline showed most sarcasm false
+positives are genuine negative reviews -- the model learned a
+"negative-sounding -> sarcastic" shortcut. Plain `compute_class_weight`
+uniformly upweights every minority-class example, which likely reinforces
+that shortcut rather than fixing it.
+
+**Change:** `WeightedTrainer.compute_loss` now uses focal loss
+(`(1 - p_t) ** gamma * cross_entropy`, `gamma=2.0`) instead of plain
+weighted cross-entropy. `class_weights` is kept as the per-class alpha term,
+but easy/already-correct examples get down-weighted so training spends more
+of its signal on the hard, ambiguous cases instead of amplifying the same
+easy majority-vs-minority split.
+
+**How to reproduce/compare:** same as above -- run, fill in the row, then
+check with `error_analysis.py` whether the negative-review false-positive
+rate specifically went down, not just the aggregate score.
+
+**Alternative to `experiment/source-tag-input`, not a combination of both** --
+these two branches are separate attempts at the same underlying problem
+(the sarcasm shortcut) via different mechanisms (giving more context vs.
+changing what the loss focuses on), so they can be compared independently
+before deciding whether to combine them.
+
+## experiment/max-length-256
+
+**Why:** a token-length check on `data/train.csv` (median 54 tokens, 75th
+pct 90, max 1628) showed 5.26% of training rows get truncated at the old
+`max_length=192`. Those longer texts (long reviews, multi-sentence Reddit
+comments) are plausibly where nuanced/sarcastic content is more likely to
+live -- truncating them may be discarding exactly the signal that matters.
+
+**Change:** `--max_length` default raised 192 -> 256, cutting truncation to
+2.42% of rows. Costs somewhat more compute per step (longer sequences).
+
+**How to reproduce/compare:** run, fill in the row above. This is the
+lowest-effort/lowest-risk of the three branches pushed today -- a pure
+data-coverage fix, not a change to what the model learns from or how.
+
 ## Follow-up ideas not yet tried (see conversation for full reasoning)
 
 - Try `roberta-base` and a social-media-pretrained model (e.g.
   `cardiffnlp/twitter-roberta-base-sentiment`) as `--model_name`.
-- Try oversampling or focal loss instead of `compute_class_weight("balanced")`
-  for the sarcasm imbalance (18.5% positive in training data).
-- Try `--max_length 256` (~5.3% of training rows are truncated at 192 tokens).
-- Feed `source`/`variety` into the model input, not just `text` (currently
-  only used for scoring, never seen by the model).
 - Multi-task model: one shared encoder with two classification heads
   (sentiment + sarcasm) instead of two fully independent models.
+- Once source-tag-input and focal-loss are both run, consider combining
+  whichever one helped more with max-length-256.
