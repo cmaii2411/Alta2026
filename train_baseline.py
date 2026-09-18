@@ -63,9 +63,23 @@ class TextDataset(Dataset):
 
 
 class WeightedTrainer(Trainer):
-    def __init__(self, *args, class_weights=None, **kwargs):
+    """Uses focal loss instead of plain weighted cross-entropy.
+
+    error_analysis.py on the baseline run showed the sarcasm model learned a
+    shortcut: flagging any negative/complaining review as sarcastic (most
+    false positives were genuine negative reviews, not sarcasm). Plain
+    class-weighted cross-entropy pushes uniformly harder on every minority
+    example; focal loss instead down-weights examples the model already
+    gets right (the (1 - p_t) ** gamma term) so training focuses on the
+    genuinely hard/ambiguous cases -- the ones actually driving that
+    shortcut -- rather than amplifying the same easy minority-class
+    correlation. class_weights is still used as the per-class alpha term.
+    """
+
+    def __init__(self, *args, class_weights=None, focal_gamma=2.0, **kwargs):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights
+        self.focal_gamma = focal_gamma
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.pop("labels")
@@ -74,7 +88,11 @@ class WeightedTrainer(Trainer):
         weight = None
         if self.class_weights is not None:
             weight = self.class_weights.to(logits.device)
-        loss = torch.nn.functional.cross_entropy(logits, labels, weight=weight)
+        ce_loss = torch.nn.functional.cross_entropy(
+            logits, labels, weight=weight, reduction="none"
+        )
+        pt = torch.exp(-ce_loss)  # model's probability on the true class
+        loss = ((1 - pt) ** self.focal_gamma * ce_loss).mean()
         return (loss, outputs) if return_outputs else loss
 
 
