@@ -47,6 +47,19 @@ def clean_text(text):
     return text
 
 
+def tag_source(text, source):
+    """Prepend a short tag so the model can condition on where the text came
+    from (Reddit vs Google review).
+
+    error_analysis.py on the baseline run showed missed/false-positive
+    sarcasm splitting cleanly by source -- Google-review sarcasm tends to be
+    deadpan understatement, Reddit sarcasm short and context-dependent -- yet
+    `source` was never given to the model as input, only used for scoring.
+    """
+    tag = {"reddit": "[REDDIT]", "google": "[GOOGLE]"}.get(str(source).lower(), "[UNK]")
+    return f"{tag} {text}"
+
+
 class TextDataset(Dataset):
     def __init__(self, encodings, labels=None):
         self.encodings = encodings
@@ -93,11 +106,17 @@ def get_device():
 
 
 def train_one_task(task, train_df, valid_df, tokenizer, args, device):
+    # Tag text with its source for the model's input only -- train_df/valid_df's
+    # "text" column stays untouched so answer.csv and error_analysis.py's
+    # row-alignment check against valid.csv still match.
+    train_texts = [tag_source(t, s) for t, s in zip(train_df["text"], train_df["source"])]
+    valid_texts = [tag_source(t, s) for t, s in zip(valid_df["text"], valid_df["source"])]
+
     train_enc = tokenizer(
-        list(train_df["text"]), truncation=True, padding=True, max_length=args.max_length
+        train_texts, truncation=True, padding=True, max_length=args.max_length
     )
     valid_enc = tokenizer(
-        list(valid_df["text"]), truncation=True, padding=True, max_length=args.max_length
+        valid_texts, truncation=True, padding=True, max_length=args.max_length
     )
     train_labels = train_df[task].tolist()
     train_ds = TextDataset(train_enc, train_labels)

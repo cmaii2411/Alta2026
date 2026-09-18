@@ -9,7 +9,8 @@ task/dialect, plus the final score `(min(sent-AU,sent-UK) + min(sarc-AU,sarc-UK)
 | Date | Branch | Commit | Change | sent-AU | sent-UK | sarc-AU | sarc-UK | final |
 |---|---|---|---|---|---|---|---|---|
 | 2026-09-02 | main | 424ef58 | Baseline + text preprocessing (whitespace/unicode/HTML cleanup) | 0.9133 | 0.9584 | 0.7176 | 0.6374 | 0.7754 |
-| _pending_ | experiment/best-checkpoint-selection | _(this branch)_ | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
+| 2026-09-10 | main | e294faa | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
+| _pending_ | experiment/source-tag-input | _(this branch)_ | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | _run and fill in_ | | | | |
 
 ## experiment/best-checkpoint-selection
 
@@ -35,6 +36,26 @@ this is a low-risk correctness fix, not a big lever. The bigger levers
 (model choice, class-imbalance handling, multi-task learning, etc.) are
 listed as follow-up ideas below.
 
+## experiment/source-tag-input
+
+**Why:** `error_analysis.py` run on the baseline showed the sarcasm model's
+false negatives and false positives split cleanly by `source` -- Google-review
+sarcasm reads as deadpan understatement ("The longest I had to wait in a
+drive thru. 20 minutes. Really?"), Reddit sarcasm is short and
+context-dependent ("Looks like we got a genius over here") -- yet `source`
+was never given to the model as input, only used afterward for scoring.
+
+**Change:** `tag_source()` prepends `[REDDIT]`/`[GOOGLE]` to the text handed
+to the tokenizer (model input only -- `train_df`/`valid_df["text"]` stay
+untouched so `answer.csv` and `error_analysis.py`'s row-alignment check
+against `valid.csv` still match).
+
+**How to reproduce/compare:** run `python train_baseline.py` on this branch,
+fill in its row above from the printed score table, then run
+`error_analysis.py` again to check whether the source-specific error split
+actually narrowed, not just whether the score moved (en-UK sarcasm has only
+30 positive examples in `valid.csv`, so the score alone is noisy).
+
 ## Follow-up ideas not yet tried (see conversation for full reasoning)
 
 - Try `roberta-base` and a social-media-pretrained model (e.g.
@@ -42,7 +63,5 @@ listed as follow-up ideas below.
 - Try oversampling or focal loss instead of `compute_class_weight("balanced")`
   for the sarcasm imbalance (18.5% positive in training data).
 - Try `--max_length 256` (~5.3% of training rows are truncated at 192 tokens).
-- Feed `source`/`variety` into the model input, not just `text` (currently
-  only used for scoring, never seen by the model).
 - Multi-task model: one shared encoder with two classification heads
   (sentiment + sarcasm) instead of two fully independent models.
