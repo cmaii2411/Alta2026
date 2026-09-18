@@ -12,6 +12,7 @@ task/dialect, plus the final score `(min(sent-AU,sent-UK) + min(sarc-AU,sarc-UK)
 | 2026-09-10 | main | e294faa | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
 | _pending_ | experiment/source-tag-input | 21e21fa | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | _run and fill in_ | | | | |
 | _pending_ | experiment/focal-loss | 9c5e497 | Replace weighted cross-entropy with focal loss (gamma=2) to focus on hard examples instead of uniformly upweighting the minority class | _run and fill in_ | | | | |
+| _pending_ | experiment/max-length-256 | 713116a | `--max_length` default 192 -> 256 (cuts training-row truncation from 5.26% to 2.42%) | _run and fill in_ | | | | |
 
 ## experiment/best-checkpoint-selection
 
@@ -82,10 +83,26 @@ these two branches are separate attempts at the same underlying problem
 changing what the loss focuses on), so they can be compared independently
 before deciding whether to combine them.
 
+## experiment/max-length-256
+
+**Why:** a token-length check on `data/train.csv` (median 54 tokens, 75th
+pct 90, max 1628) showed 5.26% of training rows get truncated at the old
+`max_length=192`. Those longer texts (long reviews, multi-sentence Reddit
+comments) are plausibly where nuanced/sarcastic content is more likely to
+live -- truncating them may be discarding exactly the signal that matters.
+
+**Change:** `--max_length` default raised 192 -> 256, cutting truncation to
+2.42% of rows. Costs somewhat more compute per step (longer sequences).
+
+**How to reproduce/compare:** run, fill in the row above. This is the
+lowest-effort/lowest-risk of the three branches pushed today -- a pure
+data-coverage fix, not a change to what the model learns from or how.
+
 ## Follow-up ideas not yet tried (see conversation for full reasoning)
 
 - Try `roberta-base` and a social-media-pretrained model (e.g.
   `cardiffnlp/twitter-roberta-base-sentiment`) as `--model_name`.
-- Try `--max_length 256` (~5.3% of training rows are truncated at 192 tokens).
 - Multi-task model: one shared encoder with two classification heads
   (sentiment + sarcasm) instead of two fully independent models.
+- Once source-tag-input and focal-loss are both run, consider combining
+  whichever one helped more with max-length-256.

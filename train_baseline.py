@@ -211,7 +211,15 @@ def main():
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--max_length", type=int, default=192)
+    parser.add_argument(
+        "--max_length",
+        type=int,
+        default=256,  # was 192: token-length check on data/train.csv showed
+        # ~5.3% of rows truncated at 192 (median length 54 tokens, 75th
+        # pct 90, but a long tail up to 1628) -- 256 keeps more of the
+        # longer reviews, which are exactly the ones likely to carry
+        # nuanced/sarcastic content, at some extra compute cost per step.
+    )
     parser.add_argument("--work_dir", default="./tf_runs")
     args = parser.parse_args()
 
