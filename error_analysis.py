@@ -19,6 +19,8 @@ import argparse
 import pandas as pd
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
+from train_baseline import clean_text
+
 TASKS = ["sentiment", "sarcasm"]
 DIALECTS = ["en-AU", "en-UK"]
 LABEL_NAMES = {
@@ -35,7 +37,9 @@ def load_aligned(pred_path, gold_path):
             f"row count mismatch: {pred_path} has {len(pred)}, {gold_path} has {len(gold)}"
         )
     # Both files are derived from valid.csv in the same order; confirm before trusting it.
-    if not (pred["text"].astype(str).values == gold["text"].astype(str).values).all():
+    # train_baseline.py runs clean_text() on valid_df["text"] 
+    gold_text_cleaned = gold["text"].astype(str).map(clean_text)
+    if not (pred["text"].astype(str).values == gold_text_cleaned.values).all():
         raise SystemExit(
             "text columns do not match row-for-row -- pred and gold are not aligned"
         )

@@ -10,7 +10,7 @@ task/dialect, plus the final score `(min(sent-AU,sent-UK) + min(sarc-AU,sarc-UK)
 |---|---|---|---|---|---|---|---|---|
 | 2026-09-02 | main | 424ef58 | Baseline + text preprocessing (whitespace/unicode/HTML cleanup) | 0.9133 | 0.9584 | 0.7176 | 0.6374 | 0.7754 |
 | 2026-09-10 | main | e294faa | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
-| _pending_ | experiment/source-tag-input | 21e21fa | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | _run and fill in_ | | | | |
+| 2026-09-25 | experiment/source-tag-input | 21e21fa | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | 0.9051 | 0.9532 | 0.7399 | 0.6359 | 0.7705 |
 | _pending_ | experiment/focal-loss | 9c5e497 | Replace weighted cross-entropy with focal loss (gamma=2) to focus on hard examples instead of uniformly upweighting the minority class | _run and fill in_ | | | | |
 | _pending_ | experiment/max-length-256 | 713116a | `--max_length` default 192 -> 256 (cuts training-row truncation from 5.26% to 2.42%) | _run and fill in_ | | | | |
 
@@ -57,6 +57,18 @@ fill in its row above from the printed score table, then run
 `error_analysis.py` again to check whether the source-specific error split
 actually narrowed, not just whether the score moved (en-UK sarcasm has only
 30 positive examples in `valid.csv`, so the score alone is noisy).
+
+**Result (run on Colab T4, 2026-09-25):** sarcasm-en-AU improved meaningfully
+(0.7176 -> 0.7399), but sarcasm-en-UK stayed flat (0.6374 -> 0.6359) and
+sentiment dropped slightly on both dialects, netting a final score of 0.7705
+vs baseline 0.7754 -- essentially flat-to-slightly-worse.
+
+The reason the en-AU sarcasm gain didn't help the final score: the score
+formula takes the *worse* dialect per task. sarcasm's bottleneck is en-UK,
+not en-AU -- this change improved the dialect that wasn't the constraint.
+Takeaway for future experiments: check which dialect is the `min()` for each
+task *before* judging whether a change worked; en-UK sarcasm (only 30
+positive examples in `valid.csv`) is the actual thing worth moving.
 
 ## experiment/focal-loss
 
