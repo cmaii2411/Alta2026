@@ -1,6 +1,6 @@
-pandas
-scikit-learn
-scipy
-torch
-transformers
-accelerate
+pandas>=3.0.5
+scikit-learn>=1.9.0
+scipy>=1.18.1
+torch>=2.13.0
+transformers>=5.15.1
+accelerate>=1.14.0
