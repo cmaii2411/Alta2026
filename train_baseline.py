@@ -28,6 +28,7 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from transformers.trainer_utils import get_last_checkpoint
 
 
 def clean_text(text):
@@ -177,7 +178,15 @@ def train_one_task(task, train_df, valid_df, tokenizer, args, device):
         compute_metrics=compute_metrics,
         class_weights=class_weights,
     )
-    trainer.train()
+    resume_ckpt = None
+    if args.resume:
+        resume_ckpt = get_last_checkpoint(training_args.output_dir)
+        if resume_ckpt:
+            print(f"  [{task}] resuming from checkpoint: {resume_ckpt}")
+        else:
+            print(f"  [{task}] --resume set but no checkpoint found in "
+                  f"{training_args.output_dir}, starting fresh")
+    trainer.train(resume_from_checkpoint=resume_ckpt)
 
     if trainer.state.best_metric is not None:
         print(
@@ -221,6 +230,13 @@ def main():
         # nuanced/sarcastic content, at some extra compute cost per step.
     )
     parser.add_argument("--work_dir", default="./tf_runs")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume each task from its last saved checkpoint in work_dir/<task>, "
+        "if one exists -- useful after a crashed/interrupted run instead of "
+        "restarting from scratch.",
+    )
     args = parser.parse_args()
 
     device = get_device()
