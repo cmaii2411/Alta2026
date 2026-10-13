@@ -11,8 +11,8 @@ task/dialect, plus the final score `(min(sent-AU,sent-UK) + min(sarc-AU,sarc-UK)
 | 2026-09-02 | main | 424ef58 | Baseline + text preprocessing (whitespace/unicode/HTML cleanup) | 0.9133 | 0.9584 | 0.7176 | 0.6374 | 0.7754 |
 | 2026-09-10 | main | e294faa | Keep best-epoch checkpoint (`load_best_model_at_end`) instead of whichever epoch training happens to stop on | _run and fill in_ | | | | |
 | 2026-09-25 | experiment/source-tag-input | 21e21fa | Prepend `[REDDIT]`/`[GOOGLE]` tag to model input text (error analysis showed sarcasm errors split by source) | 0.9051 | 0.9532 | 0.7399 | 0.6359 | 0.7705 |
-| _pending_ | experiment/focal-loss | 9c5e497 | Replace weighted cross-entropy with focal loss (gamma=2) to focus on hard examples instead of uniformly upweighting the minority class | _run and fill in_ | | | | |
-| _pending_ | experiment/max-length-256 | 713116a | `--max_length` default 192 -> 256 (cuts training-row truncation from 5.26% to 2.42%) | _run and fill in_ | | | | |
+| 2026-10-13 | experiment/focal-loss | 9c5e497 | Replace weighted cross-entropy with focal loss (gamma=2) to focus on hard examples instead of uniformly upweighting the minority class | 0.9079 | 0.9558 | 0.7404 | 0.6021 | 0.7550 |
+| 2026-10-13 | experiment/max-length-256 | 713116a | `--max_length` default 192 -> 256 (cuts training-row truncation from 5.26% to 2.42%) | 0.8993 | 0.9636 | 0.7366 | 0.6359 | 0.7676 |
 
 ## experiment/best-checkpoint-selection
 
@@ -95,6 +95,25 @@ these two branches are separate attempts at the same underlying problem
 changing what the loss focuses on), so they can be compared independently
 before deciding whether to combine them.
 
+**Result (run on Colab T4, 2026-10-13):** worse, not better. sarcasm-en-AU
+improved similarly to source-tag-input (0.7176 -> 0.7404), but
+sarcasm-en-UK -- the actual bottleneck -- *dropped* notably (0.6374 ->
+0.6021), and sentiment slipped slightly too. Final score: 0.7550, clearly
+below baseline's 0.7754 and below source-tag-input's 0.7705.
+
+**Why this likely backfired:** en-UK sarcasm has only 30 positive examples
+in `valid.csv` to begin with. Focal loss's `(1 - p_t) ** gamma` term pushes
+training to concentrate on the hardest/most-ambiguous examples -- with a
+signal that thin, "hardest examples" is mostly noise, not a stable pattern,
+so the model likely overfit to a handful of specific hard cases instead of
+learning anything that generalizes to en-UK sarcasm. The mechanism that
+helped en-AU (more training data per class) seems to need more signal than
+en-UK has to avoid doing this.
+
+**Verdict:** reject this change -- do not combine with `max-length-256`.
+Between the two sarcasm-shortcut attempts, `source-tag-input` is the one
+worth building on; `focal-loss` made the actual bottleneck worse.
+
 ## experiment/max-length-256
 
 **Why:** a token-length check on `data/train.csv` (median 54 tokens, 75th
@@ -110,11 +129,49 @@ live -- truncating them may be discarding exactly the signal that matters.
 lowest-effort/lowest-risk of the three branches pushed today -- a pure
 data-coverage fix, not a change to what the model learns from or how.
 
+**Result (run on Colab T4, 2026-10-13):** also below baseline. Final score
+0.7676 vs baseline 0.7754. sarcasm-en-UK barely moved (0.6374 -> 0.6359,
+same as source-tag-input's result), and sentiment-en-AU took the largest
+hit of any of the three experiments (0.9133 -> 0.8993). Reducing truncation
+didn't translate into a better score here.
+
+**Verdict:** reject on its own. Not clearly harmful enough to blame the
+mechanism (longer sequences, more compute per step) for anything specific,
+but it didn't deliver the hoped-for gain either, and it's not worth the
+extra compute cost without one.
+
+## Summary after all three single-variable experiments
+
+None of the three beat baseline (0.7754) individually:
+
+| Branch | Final | sarc-en-UK (the bottleneck) |
+|---|---|---|
+| baseline | **0.7754** | 0.6374 |
+| source-tag-input | 0.7705 | 0.6359 |
+| max-length-256 | 0.7676 | 0.6359 |
+| focal-loss | 0.7550 | 0.6021 |
+
+The pattern across all three: sarcasm-en-AU reliably improves (+0.016 to
++0.023), sentiment-en-AU reliably drops a little, and sarcasm-en-UK --
+the actual bottleneck for the sarcasm task -- never meaningfully moves
+(two land at the identical 0.6359, one gets worse). None of these changes
+individually address what's actually holding the score back. Worth trying
+`source-tag-input` combined with `max-length-256` next (untested
+combination, and source-tag-input is the only one of the three with a real
+positive effect to build on), but it's also worth treating en-UK sarcasm's
+30-example validation set as a hard ceiling on how much any single change
+can be expected to move that number.
+
 ## Follow-up ideas not yet tried (see conversation for full reasoning)
 
 - Try `roberta-base` and a social-media-pretrained model (e.g.
   `cardiffnlp/twitter-roberta-base-sentiment`) as `--model_name`.
 - Multi-task model: one shared encoder with two classification heads
   (sentiment + sarcasm) instead of two fully independent models.
-- Once source-tag-input and focal-loss are both run, consider combining
-  whichever one helped more with max-length-256.
+- Both sarcasm-shortcut attempts are now run: `source-tag-input` is
+  flat-to-slightly-worse (0.7705) but genuinely helped en-AU sarcasm;
+  `focal-loss` is rejected (0.7550, hurt the en-UK bottleneck). Worth
+  trying `source-tag-input` combined with `max-length-256` next, and/or
+  `source-tag-input` combined with `best-checkpoint-selection` (neither
+  combination has been tried together yet -- each branch so far only
+  changes one thing relative to the preprocessing baseline).
